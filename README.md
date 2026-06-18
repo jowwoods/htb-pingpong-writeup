@@ -126,7 +126,7 @@ DC1 (c.roberts@PING) → Enter-PSSession dc2.pong.htb (c.carlssen@PONG)
 → C:\Users\C.Carlssen\Desktop\user.txt
 ```
 
-Flag: `06f75e8838b1b64deddb6c6979683a35`
+Flag: `[redacted]`
 
 ---
 
@@ -222,7 +222,7 @@ nxc smb dc1.ping.htb -k --use-kcache
 ```bash
 wmiexec.py -k -no-pass dc1.ping.htb
 C:\> type C:\Users\Administrator\Desktop\root.txt
-2723de5720139aca8e2b4ff2cbd9af01
+[redacted]
 ```
 
 ---
