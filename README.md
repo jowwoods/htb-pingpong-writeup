@@ -2,9 +2,9 @@
 
 PingPong, Hack The Box. Insane difficulty. Multi-forest Active Directory, bidirectional trust between PING and PONG. One starting account: `c.roberts`, Domain User on PING, password `AssumedBreach123`.
 
-Thirty-one sessions later, I had both flags. In between: a Chisel tunnel that took 3 days to stabilize, a SID parser that had been lying since day one, an MSSQL server that said "untrusted domain" thirteen times before we understood why, and an inter-realm golden ticket that should have worked but got eaten by Server 2022.
+Thirty-one sessions later, I had both flags. In between: a Chisel tunnel that took 3 days to stabilize, a SID parser that had been lying since day one, an MSSQL server that said "untrusted domain" thirteen times before I understood why, and an inter-realm golden ticket that should have worked but got eaten by Server 2022.
 
-If you're here for the technical summary: ESC13 to gMSA Managers WriteDACL to XXE via JEA to PSReadLine to c.carlssen's password to DCSync on PONG to ESC4 to ESC1 to root.txt. The rest of this is how we got there.
+If you're here for the technical summary: ESC13 to gMSA Managers WriteDACL to XXE via JEA to PSReadLine to c.carlssen's password to DCSync on PONG to ESC4 to ESC1 to root.txt. The rest of this is how I got there.
 
 ---
 
@@ -23,9 +23,9 @@ TGT with TempWinRMAccess SID in hand. pypsrp to DC1, whoami = ping\c.roberts. Fi
 
 ---
 
-## Step 2: the tunnel that broke us
+## Step 2: the tunnel that broke me
 
-To talk to PONG (the second forest), we need a tunnel from DC1 into the 192.168.2.0/24 LAN. Tool of choice: Chisel.
+To talk to PONG (the second forest), I need a tunnel from DC1 into the 192.168.2.0/24 LAN. Tool of choice: Chisel.
 
 Three days.
 
@@ -46,13 +46,13 @@ If I take one thing from those 3 days: verify exact binary versions before spend
 
 ---
 
-## Step 3: the phantom SID and the DACL we misread
+## Step 3: the phantom SID and the DACL I misread
 
-Cross-realm LDAP to PONG works. We enumerate. The gMSA Managers group (PONG) can read the password of the gMSA account `Pong_gMSA$`. Except the group is empty, scope Global, and everyone tells us "insufficientAccessRights" when we try to write.
+Cross-realm LDAP to PONG works. I enumerate. The gMSA Managers group (PONG) can read the password of the gMSA account `Pong_gMSA$`. Except the group is empty, scope Global, and everyone tells me "insufficientAccessRights" when I try to write.
 
-We read the LDAP attributes: c.roberts has GenericAll on the group. Yet bloodyAD rejects every modification.
+I read the LDAP attributes: c.roberts has GenericAll on the group. Yet bloodyAD rejects every modification.
 
-The bug was in our BloodHound parsing script. It generated a completely wrong SID due to incorrect binary parsing of the binary SID field.
+The bug was in my BloodHound parsing script. It generated a completely wrong SID due to incorrect binary parsing of the binary SID field.
 
 ```
 SID used (wrong):    S-1-5-21-735101288-...
@@ -71,7 +71,7 @@ Second lesson: never trust a homegrown SID parser without verifying against a pr
 
 ## Step 4: the gMSA blob that wouldn't give up its keys
 
-Blob is 548 bytes. MSDS_MANAGEDPASSWORD_BLOB structure. NT hash is easy to extract (MD4 of the password string). But to generate a TGT, we need the AES keys.
+Blob is 548 bytes. MSDS_MANAGEDPASSWORD_BLOB structure. NT hash is easy to extract (MD4 of the password string). But to generate a TGT, I need the AES keys.
 
 Two sessions deriving PBKDF2 manually with different salts: PONG.HTBPong_gMSA$, PONG.HTBpong_gmsa, pong.htbPong_gMSA$, etc. None work against the PONG KDC. KDC_ERR_PREAUTH_FAILED every time.
 
@@ -88,7 +88,7 @@ Bonus: the password string contains UTF-16LE surrogates that crash impacket. Thr
 
 ---
 
-## Step 5: the JEA we thought was dead
+## Step 5: the JEA I thought was dead
 
 Pong_gMSA$ connects to the `restricted` JEA endpoint on DC1. RestrictedRemoteServer, ConstrainedLanguage. 8 cmdlets: Clear-Host, Exit-PSSession, Get-Command, Get-FormatData, Get-Help, Measure-Object, Out-Default, Select-Object. No FileSystem provider, no .NET via New-Object, no Out-File.
 
@@ -132,16 +132,16 @@ Flag: `[redacted]`
 
 ## Step 7: the 13 "untrusted domain" attempts
 
-For root.txt we need Administrator@PING. The path goes through PONG: SYSTEM on DC2, DCSync, ExtraSids toward PING.
+For root.txt I need Administrator@PING. The path goes through PONG: SYSTEM on DC2, DCSync, ExtraSids toward PING.
 
-c.carlssen has WriteProperty on svc_sql (the MSSQL service account). We configure RBCD: Pong_gMSA$ can impersonate toward svc_sql. S4U2Proxy gets an MSSQL ticket for c.adam, who is sysadmin.
+c.carlssen has WriteProperty on svc_sql (the MSSQL service account). I configure RBCD: Pong_gMSA$ can impersonate toward svc_sql. S4U2Proxy gets an MSSQL ticket for c.adam, who is sysadmin.
 
 ```
 mssqlclient.py -k c.adam@dc2.pong.htb
 → Login from an untrusted domain
 ```
 
-Thirteen attempts later, same error every time. We tested:
+Thirteen attempts later, same error every time. I tested:
 
 - The ccache filename. c.adam@MSSQLSvc_dc2.pong.htb:1433@PONG.HTB.ccache contains `:`, which Kerberos interprets as TYPE:path. Cache invisible.
 - The exact SPN. MSSQLSvc/dc2.pong.htb:1433 with the port, not without.
@@ -150,7 +150,7 @@ Thirteen attempts later, same error every time. We tested:
 - SOCKS vs direct tunnel.
 - c.adam, svc_sql, c.carlssen, Administrator.
 
-With -debug we confirm the ticket arrives at the MSSQL server. The server rejects it, not the network.
+With -debug I confirm the ticket arrives at the MSSQL server. The server rejects it, not the network.
 
 What finally worked: kvno (native MIT Kerberos). The patched getST.py generated a structurally different ticket from what kvno produces. The KDC accepted both, MSSQL only accepted one.
 
@@ -173,7 +173,7 @@ xp_cmdshell 'whoami';
 → pong\svc_sql
 ```
 
-We need to upload GodPotato.exe. DC2 has no direct route to the Mac. DC1 has no HTTP listener. Solution: split the binary into 11 base64 chunks of 7000 characters, echo them one by one to DC2, concatenate, certutil -decode.
+I need to upload GodPotato.exe. DC2 has no direct route to the Mac. DC1 has no HTTP listener. Solution: split the binary into 11 base64 chunks of 7000 characters, echo them one by one to DC2, concatenate, certutil -decode.
 
 ```powershell
 echo.LIGNE1>>$env:TEMP\gp.b64
@@ -189,7 +189,7 @@ With SYSTEM, c.carlssen becomes Domain Admin on PONG. Volume Shadow Copy extract
 
 ## Step 9: the golden ticket that was worth nothing
 
-krbtgt PONG hash extracted, AES keys in hand. We forge an inter-realm golden ticket with ExtraSids for Domain Admins on PING. Four attempts, four failures.
+krbtgt PONG hash extracted, AES keys in hand. I forge an inter-realm golden ticket with ExtraSids for Domain Admins on PING. Four attempts, four failures.
 
 The KDC is a Server 2022 with PAC validation. The golden ticket's PAC is signed with krbtgt PONG, but the PING KDC verifies the cross-realm signature. Without the trust account key for PING$ in PONG, the signature is invalid.
 
@@ -201,7 +201,7 @@ Fifth lesson: inter-realm golden tickets don't pass on Server 2022+ without the 
 
 The DCSync also pulled R.Martinelli. Foreign Security Principal on PONG, CA Manager on the PING PKI.
 
-We grant GenericAll to c.roberts on the SmartcardAuthentication template (ESC4). We configure the template to allow UPN in the SAN (ESC1). We enroll a certificate with UPN=administrator@ping.htb.
+I grant GenericAll to c.roberts on the SmartcardAuthentication template (ESC4). I configure the template to allow UPN in the SAN (ESC1). I enroll a certificate with UPN=administrator@ping.htb.
 
 ```bash
 certipy req -u c.roberts@ping.htb -p AssumedBreach123 \
@@ -234,7 +234,7 @@ C:\> type C:\Users\Administrator\Desktop\root.txt
 | 1 | ESC13 was easy. Then 3 days on Chisel. |
 | 4 | Kerberos 3-step OK, PONG tunnel finally UP |
 | 5-7 | WriteDACL gMSA Managers. SID bug + OICI flags. |
-| 8 | gMSA blob read. AES256 refuses to work. We derive PBKDF2 into the void. |
+| 8 | gMSA blob read. AES256 refuses to work. I derive PBKDF2 into the void. |
 | 9 | JEA analyzed thoroughly. 8 cmdlets. Nothing. Dead end. |
 | 10 | XXE via XmlDocument::new(). PSReadLine history spills everything. |
 | 11 | user.txt |

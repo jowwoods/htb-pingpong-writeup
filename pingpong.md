@@ -1,10 +1,10 @@
-# PingPong HTB : comment on a bouffé 12 jours de debug pour 3 jours de chemin réel
+# PingPong HTB : comment j'ai bouffé 12 jours de debug pour 3 jours de chemin réel
 
 Machine PingPong, Hack The Box. Très difficile. Active Directory multi-forêts, confiance bidirectionnelle PING↔PONG. Un seul compte de départ : `c.roberts`, Domain User sur PING, mot de passe `AssumedBreach123`.
 
-31 sessions plus tard, j'avais les deux flags. Entre les deux : un tunnel chisel qui a mis 3 jours à marcher, un parseur de SID qui mentait depuis le début, un MSSQL qui disait "untrusted domain" treize fois de suite avant qu'on comprenne pourquoi, et un golden ticket inter-realm qui aurait dû marcher mais que Server 2022 a mangé.
+31 sessions plus tard, j'avais les deux flags. Entre les deux : un tunnel chisel qui a mis 3 jours à marcher, un parseur de SID qui mentait depuis le début, un MSSQL qui disait "untrusted domain" treize fois de suite avant que je comprenne pourquoi, et un golden ticket inter-realm qui aurait dû marcher mais que Server 2022 a mangé.
 
-Si t'es là pour le résumé technique : ESC13 → gMSA Managers WriteDACL → XXE JEA → PSReadLine → password c.carlssen → DCSync PONG → ESC4 → ESC1 → root.txt. Le reste de ce texte, c'est comment on y est arrivé.
+Si t'es là pour le résumé technique : ESC13 → gMSA Managers WriteDACL → XXE JEA → PSReadLine → password c.carlssen → DCSync PONG → ESC4 → ESC1 → root.txt. Le reste de ce texte, c'est comment j'y suis arrivé.
 
 ---
 
@@ -23,7 +23,7 @@ TGT TempWinRMAccess en poche. pypsrp vers DC1, whoami = ping\c.roberts. Premièr
 
 ---
 
-## Étape 2 : le tunnel qui nous a mis par terre
+## Étape 2 : le tunnel qui m'a mis par terre
 
 Pour parler à PONG (deuxième forêt), il faut un tunnel depuis DC1 vers le LAN 192.168.2.0/24. Outil choisi : Chisel.
 
@@ -46,13 +46,13 @@ Si je devais retenir un truc de ces 3 jours : vérifie la version exacte des bin
 
 ---
 
-## Étape 3 : le SID fantôme et la DACL qu'on lisait mal
+## Étape 3 : le SID fantôme et la DACL que je lisais mal
 
-LDAP cross-realm vers PONG fonctionne. On énumère. Le groupe gMSA Managers (PONG) peut lire le mot de passe du compte gMSA `Pong_gMSA$`. Sauf que le groupe est vide, scope Global, et tout le monde nous dit "insufficientAccessRights" quand on essaie d'écrire.
+LDAP cross-realm vers PONG fonctionne. J'énumère. Le groupe gMSA Managers (PONG) peut lire le mot de passe du compte gMSA `Pong_gMSA$`. Sauf que le groupe est vide, scope Global, et tout le monde me dit "insufficientAccessRights" quand j'essaie d'écrire.
 
-On lit les attributs LDAP : c.roberts a GenericAll sur le groupe. Pourtant bloodyAD refuse toute modification.
+Je lis les attributs LDAP : c.roberts a GenericAll sur le groupe. Pourtant bloodyAD refuse toute modification.
 
-Le bug venait de notre script de parsing BloodHound. Il générait un SID complètement faux à cause d'un parsing binaire incorrect du binary SID.
+Le bug venait de mon script de parsing BloodHound. Il générait un SID complètement faux à cause d'un parsing binaire incorrect du binary SID.
 
 ```
 SID utilisé (faux) :   S-1-5-21-735101288-...
@@ -88,7 +88,7 @@ Bonus : le password string contient des surrogates UTF-16LE qui font crasher imp
 
 ---
 
-## Étape 5 : le JEA qu'on pensait mort
+## Étape 5 : le JEA que je pensais mort
 
 Pong_gMSA$ se connecte au JEA endpoint `restricted` sur DC1. RestrictedRemoteServer, ConstrainedLanguage. 8 cmdlets : Clear-Host, Exit-PSSession, Get-Command, Get-FormatData, Get-Help, Measure-Object, Out-Default, Select-Object. Pas de FileSystem provider, pas de .NET via New-Object, pas de Out-File.
 
@@ -134,14 +134,14 @@ Flag : `[redacted]`
 
 Pour root.txt il faut Administrator@PING. Le chemin passe par PONG : SYSTEM sur DC2, DCSync, ExtraSids vers PING.
 
-c.carlssen a WriteProperty sur svc_sql (compte de service MSSQL). On configure RBCD : Pong_gMSA$ peut impersoner vers svc_sql. S4U2Proxy obtient un ticket MSSQL pour c.adam, qui est sysadmin.
+c.carlssen a WriteProperty sur svc_sql (compte de service MSSQL). Je configure RBCD : Pong_gMSA$ peut impersoner vers svc_sql. S4U2Proxy obtient un ticket MSSQL pour c.adam, qui est sysadmin.
 
 ```
 mssqlclient.py -k c.adam@dc2.pong.htb
 → Login from an untrusted domain
 ```
 
-Treize tentatives plus tard, toujours la même erreur. On a testé :
+Treize tentatives plus tard, toujours la même erreur. J'ai testé :
 
 - Le nom du fichier ccache. c.adam@MSSQLSvc_dc2.pong.htb:1433@PONG.HTB.ccache contient `:`, que Kerberos interprète comme TYPE:chemin. Cache invisible.
 - Le SPN exact. MSSQLSvc/dc2.pong.htb:1433 avec le port, pas sans.
@@ -150,7 +150,7 @@ Treize tentatives plus tard, toujours la même erreur. On a testé :
 - SOCKS vs tunnel direct.
 - c.adam, svc_sql, c.carlssen, Administrator.
 
-Avec -debug on confirme que le ticket arrive sur le serveur MSSQL. C'est le serveur qui rejette, pas le réseau.
+Avec -debug je confirme que le ticket arrive sur le serveur MSSQL. C'est le serveur qui rejette, pas le réseau.
 
 Ce qui a marché au final : kvno (Kerberos natif MIT). getST.py patché générait un ticket structurellement différent du ticket que kvno produit. Le KDC acceptait les deux, MSSQL n'en acceptait qu'un.
 
@@ -189,7 +189,7 @@ Avec SYSTEM, c.carlssen devient Domain Admin PONG. Volume Shadow Copy extrait nt
 
 ## Étape 9 : le golden ticket qui valait rien
 
-krbtgt PONG hashé, clés AES en main. On forge un golden ticket inter-realm avec ExtraSids Domain Admins PING. Quatre tentatives, quatre échecs.
+krbtgt PONG hashé, clés AES en main. Je forge un golden ticket inter-realm avec ExtraSids Domain Admins PING. Quatre tentatives, quatre échecs.
 
 Le KDC est un Server 2022 avec PAC validation. Le PAC du golden ticket est signé avec krbtgt PONG, mais le KDC PING vérifie la signature cross-realm. Sans la clé du trust account PING$ dans PONG, la signature est invalide.
 
@@ -201,7 +201,7 @@ Cinquième leçon : golden ticket inter-realm ne passe pas sur Server 2022+ sans
 
 Le DCSync a aussi sorti R.Martinelli. Foreign Security Principal PONG, CA Manager sur la PKI PING.
 
-On donne GenericAll à c.roberts sur le template SmartcardAuthentication (ESC4). On configure le template pour autoriser l'UPN dans le SAN (ESC1). On enroll un certificat avec UPN=administrator@ping.htb.
+Je donne GenericAll à c.roberts sur le template SmartcardAuthentication (ESC4). Je configure le template pour autoriser l'UPN dans le SAN (ESC1). J'enroll un certificat avec UPN=administrator@ping.htb.
 
 ```bash
 certipy req -u c.roberts@ping.htb -p AssumedBreach123 \
@@ -234,7 +234,7 @@ C:\> type C:\Users\Administrator\Desktop\root.txt
 | 1 | ESC13 facile. Puis 3 jours sur Chisel. |
 | 4 | Kerberos 3-step OK, tunnel PONG enfin UP |
 | 5-7 | WriteDACL gMSA Managers. Bug de SID + flags OICI. |
-| 8 | Blob gMSA lu. AES256 refuse de marcher. On dérive PBKDF2 dans le vide. |
+| 8 | Blob gMSA lu. AES256 refuse de marcher. Je dérive PBKDF2 dans le vide. |
 | 9 | JEA analysé à fond. 8 cmdlets. Rien. Cul-de-sac. |
 | 10 | XXE via XmlDocument::new(). PSReadLine history livre tout. |
 | 11 | user.txt |
